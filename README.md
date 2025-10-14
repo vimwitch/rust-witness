@@ -42,6 +42,16 @@ fn build_proof() {
 ```
 
 
+## Curve Support
+
+The library automatically handles different elliptic curves by reading field parameters directly from the compiled WASM circuit. No special configuration is needed - just provide the appropriate WASM file compiled for your target curve.
+
+### Tested Curves
+- ✅ **bn128 (BN254)**: Fully tested with keccak and multiplier circuits
+- ✅ **secp256r1**: Fully tested with ECDSA and JWT circuits
+
+The witness generation automatically detects and uses the correct field arithmetic from the WASM binary.
+
 ## Setup
 
 Clone the repo then run the following command in the repo directory:
