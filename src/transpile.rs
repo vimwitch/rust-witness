@@ -15,15 +15,37 @@ use walkdir::WalkDir;
 const W2C2_BUILD_SCRIPT: &str = include_str!("../build_w2c2.sh");
 const GLOBALS_C: &str = include_str!("./globals.c");
 
-// Get a function to spawn w2c2, either from $PATH or by building locally
-fn w2c2_cmd() -> (fn() -> Command, PathBuf) {
+// Get a function to spawn w2c2, either from $PATH, static binary, or by building locally
+// Returns: (w2c2_command_fn, headers_path)
+fn w2c2_cmd() -> (Box<dyn Fn() -> Command>, PathBuf) {
     let w2c2_path = Path::new(env::var("OUT_DIR").unwrap().as_str()).join(Path::new("w2c2"));
+    // Use path relative to Cargo.toml for w2c2 headers
+    let cargo_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap());
+    let w2c2_headers_path = cargo_dir.join("w2c2");
     let w2c2_script_path =
         Path::new(env::var("OUT_DIR").unwrap().as_str()).join(Path::new("build_w2c2.sh"));
+    
+    // Check if headers are provided via environment variable
+    let (headers_path, has_custom_headers) = if let Ok(custom_headers) = env::var("W2C2_HEADERS") {
+        let custom_path = Path::new(&custom_headers);
+        if custom_path.exists() && custom_path.is_dir() {
+            (custom_path.to_path_buf(), true)
+        } else {
+            (w2c2_headers_path.clone(), false)
+        }
+    } else {
+        (w2c2_headers_path.clone(), false)
+    };
+    
+    // Check if headers already exist (from previous clone or custom path)
+    let need_headers = !has_custom_headers && (!headers_path.exists() || !headers_path.join("w2c2_base.h").exists());
+    
     fs::write(&w2c2_script_path, W2C2_BUILD_SCRIPT).expect("Failed to write build script");
+    
     match Command::new("w2c2").spawn() {
         Ok(_) => {
-            // clone the repo to get the headers
+            // w2c2 is in PATH, only clone if headers are needed and not provided via env
+            if need_headers {
             Command::new("sh")
                 .arg(w2c2_script_path.to_str().unwrap())
                 .arg("1")
@@ -31,11 +53,54 @@ fn w2c2_cmd() -> (fn() -> Command, PathBuf) {
                 .expect("Failed to spawn w2c2 build")
                 .wait()
                 .expect("w2c2 build errored");
+            }
             // Run the binary in the PATH
-            (|| Command::new("w2c2"), w2c2_path)
+            (Box::new(|| Command::new("w2c2")), headers_path)
         }
         Err(_e) => {
-            // Build the w2c2 binary
+            // Check for static binary via environment variable
+            if let Ok(static_binary_path) = env::var("W2C2_BINARY") {
+                let static_path = Path::new(&static_binary_path);
+                if static_path.exists() && static_path.is_file() {
+                    // Only clone if headers are needed and not provided via env
+                    if need_headers {
+                        Command::new("sh")
+                            .arg(w2c2_script_path.to_str().unwrap())
+                            .arg("1")
+                            .spawn()
+                            .expect("Failed to spawn w2c2 build")
+                            .wait()
+                            .expect("w2c2 build errored");
+                    }
+                    let static_path_str = static_path.to_str().unwrap().to_string();
+                    return (
+                        Box::new(move || Command::new(&static_path_str)),
+                        headers_path,
+                    );
+                }
+            }
+            
+            // Check if static binary already exists in OUT_DIR
+            let static_binary = Path::new(env::var("OUT_DIR").unwrap().as_str()).join("w2c2-static");
+            if static_binary.exists() && static_binary.is_file() {
+                // Only clone if headers are needed and not provided via env
+                if need_headers {
+                    Command::new("sh")
+                        .arg(w2c2_script_path.to_str().unwrap())
+                        .arg("1")
+                        .spawn()
+                        .expect("Failed to spawn w2c2 build")
+                        .wait()
+                        .expect("w2c2 build errored");
+                }
+                let static_binary_str = static_binary.to_str().unwrap().to_string();
+                return (
+                    Box::new(move || Command::new(&static_binary_str)),
+                    headers_path,
+                );
+            }
+            
+            // Build the w2c2 binary from source (fallback)
             Command::new("sh")
                 .arg(w2c2_script_path.to_str().unwrap())
                 .spawn()
@@ -43,13 +108,13 @@ fn w2c2_cmd() -> (fn() -> Command, PathBuf) {
                 .wait()
                 .expect("w2c2 build errored");
             (
-                || {
+                Box::new(|| {
                     let w2c2_path =
                         Path::new(env::var("OUT_DIR").unwrap().as_str()).join(Path::new("w2c2"));
                     let w2c2_exec_path = w2c2_path.join(Path::new("build/w2c2/w2c2"));
                     Command::new(w2c2_exec_path.to_str().unwrap())
-                },
-                w2c2_path,
+                }),
+                headers_path,
             )
         }
     }
@@ -77,7 +142,7 @@ pub fn transpile_wasm(wasmdir: String) {
                 .to_str()
                 .unwrap(),
         )
-        .flag(format!("-I{}", w2c2_path.join("w2c2").to_str().unwrap()).as_str())
+        .flag(format!("-I{}", w2c2_path.to_str().unwrap()).as_str())
         .flag("-Wno-unused-label")
         .flag("-Wno-unused-but-set-variable")
         .flag("-Wno-unused-variable")
