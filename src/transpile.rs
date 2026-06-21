@@ -154,8 +154,8 @@ pub fn transpile_wasm(wasmdir: String) {
                 .wait()
                 .expect("w2c2 command errored");
 
-            let contents = fs::read_to_string(out.clone())
-                .expect("Failed to read transpiled C source");
+            let contents =
+                fs::read_to_string(out.clone()).expect("Failed to read transpiled C source");
             // make the data constants static to prevent duplicate symbol errors
             fs::write(
                 out.clone(),
