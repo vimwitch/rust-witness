@@ -14,23 +14,25 @@ env:
     RUSTC_WRAPPER: "sccache"
 
 jobs:
-    # TODO: Add a job to run clippy
     lint:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
+            - name: Install Rust toolchain
+              uses: dtolnay/rust-toolchain@stable
+              with:
+                  components: rustfmt, clippy
             - name: Check formatting
               run: cargo fmt --all -- --check
+            - name: Run clippy
+              run: cargo clippy --all-targets -- -D warnings
 
     test:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v4
             - name: Install Rust toolchain
-              uses: actions-rs/toolchain@v1
-              with:
-                  toolchain: stable
-                  override: true
+              uses: dtolnay/rust-toolchain@stable
             - name: Run sccache-cache
               uses: mozilla-actions/sccache-action@v0.0.3
             - name: Build rust

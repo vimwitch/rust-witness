@@ -17,9 +17,10 @@ const GLOBALS_C: &str = include_str!("./globals.c");
 
 // Get a function to spawn w2c2, either from $PATH or by building locally
 fn w2c2_cmd() -> (fn() -> Command, PathBuf) {
-    let w2c2_path = Path::new(env::var("OUT_DIR").unwrap().as_str()).join(Path::new("w2c2"));
-    let w2c2_script_path =
-        Path::new(env::var("OUT_DIR").unwrap().as_str()).join(Path::new("build_w2c2.sh"));
+    let out_dir =
+        env::var("OUT_DIR").expect("OUT_DIR not set; this must be called from a build script");
+    let w2c2_path = Path::new(out_dir.as_str()).join(Path::new("w2c2"));
+    let w2c2_script_path = Path::new(out_dir.as_str()).join(Path::new("build_w2c2.sh"));
     fs::write(&w2c2_script_path, W2C2_BUILD_SCRIPT).expect("Failed to write build script");
     match Command::new("w2c2").spawn() {
         Ok(_) => {
@@ -44,8 +45,12 @@ fn w2c2_cmd() -> (fn() -> Command, PathBuf) {
                 .expect("w2c2 build errored");
             (
                 || {
-                    let w2c2_path =
-                        Path::new(env::var("OUT_DIR").unwrap().as_str()).join(Path::new("w2c2"));
+                    let w2c2_path = Path::new(
+                        env::var("OUT_DIR")
+                            .expect("OUT_DIR not set; this must be called from a build script")
+                            .as_str(),
+                    )
+                    .join(Path::new("w2c2"));
                     let w2c2_exec_path = w2c2_path.join(Path::new("build/w2c2/w2c2"));
                     Command::new(w2c2_exec_path.to_str().unwrap())
                 },
@@ -56,7 +61,9 @@ fn w2c2_cmd() -> (fn() -> Command, PathBuf) {
 }
 
 pub fn transpile_wasm(wasmdir: String) {
-    let globals_c_path = Path::new(&env::var("OUT_DIR").unwrap()).join(Path::new("globals.c"));
+    let out_dir = env::var("OUT_DIR")
+        .expect("OUT_DIR not set; transpile_wasm must be called from a build script");
+    let globals_c_path = Path::new(&out_dir).join(Path::new("globals.c"));
     fs::write(&globals_c_path, GLOBALS_C).expect("Failed to write globals.c");
     if !Path::is_dir(Path::new(wasmdir.as_str())) {
         panic!("wasmdir must be a directory");
@@ -65,7 +72,7 @@ pub fn transpile_wasm(wasmdir: String) {
 
     let (w2c2, w2c2_path) = w2c2_cmd();
 
-    let circuit_out_dir = env::var("OUT_DIR").unwrap();
+    let circuit_out_dir = out_dir;
     let mut builder = cc::Build::new();
     // empty the handlers file
     let mut handler = "".to_string();
@@ -85,9 +92,8 @@ pub fn transpile_wasm(wasmdir: String) {
         .flag("-Wno-null-character")
         .flag("-Wno-c2x-extensions");
 
-    let mut last_modified_file = std::time::SystemTime::UNIX_EPOCH;
     for entry in WalkDir::new(wasmdir) {
-        let e = entry.unwrap();
+        let e = entry.expect("Failed to read directory entry");
         let path = e.path();
         if path.is_dir() {
             continue;
@@ -140,7 +146,7 @@ pub fn transpile_wasm(wasmdir: String) {
             w2c2()
                 .arg("-p")
                 .arg("-m")
-                .arg("-f 1")
+                .args(["-f", "1"])
                 .arg(path)
                 .arg(out.clone())
                 .spawn()
@@ -148,7 +154,8 @@ pub fn transpile_wasm(wasmdir: String) {
                 .wait()
                 .expect("w2c2 command errored");
 
-            let contents = fs::read_to_string(out.clone()).unwrap();
+            let contents = fs::read_to_string(out.clone())
+                .expect("Failed to read transpiled C source");
             // make the data constants static to prevent duplicate symbol errors
             fs::write(
                 out.clone(),
@@ -160,19 +167,12 @@ pub fn transpile_wasm(wasmdir: String) {
                 "C source files are up to date, skipping transpilation: {}",
                 path.display()
             );
-            last_modified_file = std::cmp::max(
-                last_modified_file,
-                fs::metadata(&out)
-                    .expect("Failed to read metadata")
-                    .modified()
-                    .expect("Failed to read modified time"),
-            );
         }
 
         builder.file(out.clone());
         // Add all the files to the builder that start with "s0..." and end with ".c" (the results of w2c2 `-f` flag)
         for entry in WalkDir::new(circuit_out_dir.clone()) {
-            let e = entry.unwrap();
+            let e = entry.expect("Failed to read directory entry");
             let path = e.path();
             if path.is_dir() {
                 continue;

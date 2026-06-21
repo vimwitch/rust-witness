@@ -6,6 +6,9 @@ description = "Build a circom witness in Rust"
 license = "Apache-2.0"
 homepage = "https://github.com/chancehudson/rust-witness"
 repository = "https://github.com/chancehudson/rust-witness.git"
+documentation = "https://docs.rs/rust-witness"
+keywords = ["circom", "witness", "zero-knowledge", "zk", "wasm"]
+categories = ["cryptography", "development-tools::build-utils", "wasm"]
 
 [dependencies]
 cc = { version = "1.2.10", features = ["parallel"] }

@@ -7,7 +7,7 @@ include!("./src/transpile.rs");
 // for the tests in rust-witness. Cargo/rust doesn't seem to offer
 // a solution so we use a simple env variable set using .cargo
 fn main() {
-    if let Ok(_) = std::env::var("RUST_WITNESS_LINK_TEST_WITNESS") {
+    if std::env::var("RUST_WITNESS_LINK_TEST_WITNESS").is_ok() {
         transpile_wasm(String::from("./tests"));
     }
 }
